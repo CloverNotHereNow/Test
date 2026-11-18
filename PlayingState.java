@@ -3,44 +3,79 @@ import java.awt.event.KeyEvent;
 
 public class PlayingState implements GameState {
     private final Game game;
+    private final Maps map;      // your Maps parent class (Map1 is the current level)
+    private final Player player; // your Player class: money, health, placement limit
 
-    // Placeholder data. Replace with your Player / Map / Enemy / Tower classes.
-    private int baseHp = 100;
-    private int money = 100;
     private int wave = 1;
-    private double demoX = 0; // demo square so you can see the loop working; delete later
 
-    // TODO: private Map map;
-    // TODO: private ArrayList<Enemy> enemies = new ArrayList<>();
-    // TODO: private ArrayList<Tower> towers = new ArrayList<>();
-    // TODO: private Player player;
+    // Placeholder enemy: one red dot that walks the map's enemy path.
+    // Replace with your Enemies classes later. Position is in tile units.
+    private static final double WALKER_SPEED = 8; // tiles per second
+    private double walkerCol, walkerRow;
+    private int walkerTarget; // index of the path point it is walking toward
+
+    private String lastClick = "Click the map to test it";
+
+    // TODO: use map.getEnemies() / map.getTowers() once Enemies and Towers are ready
 
     public PlayingState(Game game) {
         this.game = game;
-        // TODO: load the map, set up wave 1
+        this.map = new Map1();
+        this.player = new Player(100, 100, 10); // money, health, placementLim (placeholder numbers)
+        resetWalker();
+    }
+
+    private void resetWalker() {
+        int[] start = map.getEnemyPath().get(0);
+        walkerCol = start[0] + 0.5; // +0.5 = centre of the tile
+        walkerRow = start[1] + 0.5;
+        walkerTarget = 1;
     }
 
     @Override
     public void update(double dt) {
-        demoX = (demoX + 200 * dt) % Game.width; // demo only
+        // Move the placeholder enemy toward its next path point
+        java.util.List<int[]> path = map.getEnemyPath();
+        int[] target = path.get(walkerTarget);
+        double tx = target[0] + 0.5;
+        double ty = target[1] + 0.5;
+        double dx = tx - walkerCol;
+        double dy = ty - walkerRow;
+        double dist = Math.hypot(dx, dy);
+        double step = WALKER_SPEED * dt;
 
-        // TODO: for (Enemy e : enemies) e.update(dt);        // walk along the path
-        // TODO: for (Tower t : towers)  t.update(dt, enemies); // find target, shoot
-        // TODO: remove dead enemies, give money
-        // TODO: if an enemy reaches the end -> baseHp -= damage
+        if (dist <= step) {
+            // arrived: snap to the point and aim for the next one
+            walkerCol = tx;
+            walkerRow = ty;
+            walkerTarget++;
+            if (walkerTarget >= path.size()) {
+                player.setHealth(player.getHealth() - 20); // reached the end: hurt the base
+                resetWalker();
+            }
+        } else {
+            walkerCol += dx / dist * step;
+            walkerRow += dy / dist * step;
+        }
 
-        if (baseHp <= 0) {
+        if (player.getHealth() <= 0) {
             game.setState(new GameOverState(game, wave));
         }
     }
 
     @Override
     public void draw(Graphics2D g2) {
-        // TODO: map.draw(g2);
-        // TODO: for (Tower t : towers)  t.draw(g2);
-        // TODO: for (Enemy e : enemies) e.draw(g2);
-        g2.setColor(Color.ORANGE);
-        g2.fillRect((int) demoX, Game.height / 2, 40, 40); // demo only
+        int w = game.getWidth();
+        int h = game.getHeight();
+
+        map.draw(g2, w, h);
+
+        // placeholder enemy
+        double cx = map.toPixelX(walkerCol, w, h);
+        double cy = map.toPixelY(walkerRow, w, h);
+        double r = map.getTileSize(w, h) * 0.6;
+        g2.setColor(Color.RED);
+        g2.fillOval((int) (cx - r), (int) (cy - r), (int) (2 * r), (int) (2 * r));
 
         drawHud(g2);
     }
@@ -48,9 +83,10 @@ public class PlayingState implements GameState {
     private void drawHud(Graphics2D g2) {
         g2.setColor(Color.WHITE);
         g2.setFont(new Font("SansSerif", Font.BOLD, 22));
-        g2.drawString("Base HP: " + baseHp, 20, 35);
-        g2.drawString("Money: " + money, 20, 65);
+        g2.drawString("Base HP: " + player.getHealth(), 20, 35);
+        g2.drawString("Money: " + player.getMoney(), 20, 65);
         g2.drawString("Wave: " + wave, 20, 95);
+        g2.drawString(lastClick, 20, 125);
     }
 
     @Override
@@ -62,8 +98,33 @@ public class PlayingState implements GameState {
 
     @Override
     public void mousePressed(int x, int y) {
-        // TODO: place a tower at (x, y) if the player has enough money
-        // and the spot is not on the enemy path
-        System.out.println("Clicked at " + x + ", " + y);
+        int w = game.getWidth();
+        int h = game.getHeight();
+        double col = map.toTileX(x, w, h);
+        double row = map.toTileY(y, w, h);
+        int c = (int) Math.floor(col);
+        int r = (int) Math.floor(row);
+
+        // TODO: place a tower here if the player has enough money and the spot is free
+        String where;
+        if (c < 0 || r < 0 || c >= map.getX() || r >= map.getY()) {
+            where = "outside the map";
+        } else if (map.isOnPath(col, row)) {
+            where = "the enemy path";
+        } else if (isSpot(map.getGroundTowersPlacement(), c, r)) {
+            where = "a ground tower spot";
+        } else if (isSpot(map.getElevatedTowersPlacement(), c, r)) {
+            where = "an elevated tower spot";
+        } else {
+            where = "empty ground (no tower spot)";
+        }
+        lastClick = "Tile (" + c + ", " + r + "): " + where;
+    }
+
+    private boolean isSpot(java.util.List<int[]> spots, int c, int r) {
+        for (int[] s : spots) {
+            if (s[0] == c && s[1] == r) return true;
+        }
+        return false;
     }
 }
